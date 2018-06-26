@@ -12,13 +12,29 @@ namespace ImpCallouts.Callouts {
     public class HouseChecks : Callout {
         public Vector3 SpawnPoint;
         public Vector3 susWalkTo;
+        public Vector3 susFleeTo;
         public Blip myBlip;
         public Ped mySuspect;
+        public LHandle pursuit;
+
+        private bool pursuitCreated = false;
+
+        private Ped player => Game.LocalPlayer.Character;
+
+        private enum ECalloutState {
+            None = 0,
+            EnRoute,
+            OnScene,
+            DecisionMade
+        };
+
+        ECalloutState calloutState = ECalloutState.None;
 
         public override bool OnBeforeCalloutDisplayed() {
             //SpawnPoint = World.GetNextPositionOnStreet(Game.LocalPlayer.Character.Position.Around(300f));
             SpawnPoint = new Vector3(469, 2617, 43);
             susWalkTo = new Vector3(474, 2590, 44);
+            susFleeTo = new Vector3(476, 2535, 48);
 
             //If peds are valid, display the area the callout is in.
             this.ShowCalloutAreaBlipBeforeAccepting(SpawnPoint, 15f);
@@ -35,9 +51,9 @@ namespace ImpCallouts.Callouts {
         }
 
         public override bool OnCalloutAccepted() {
-
+            calloutState = ECalloutState.EnRoute;
             //Spawn mySuspect at SpawnPoint.
-            mySuspect = new Ped(SpawnPoint) {
+            mySuspect = new Ped("g_m_m_chicold_01", SpawnPoint, 0F) {
 
                 //Set mySuspect as persistent, so it doesn't randomly disappear.
                 IsPersistent = true,
@@ -61,6 +77,7 @@ namespace ImpCallouts.Callouts {
             //Tells the officer which Code to run
             Functions.PlayScannerAudio("RESPOND_CODE_1");
 
+            mySuspect.Inventory.GiveFlashlight();
             mySuspect.Tasks.FollowNavigationMeshToPosition(susWalkTo, 8F, 1);
 
             return base.OnCalloutAccepted();
@@ -77,11 +94,39 @@ namespace ImpCallouts.Callouts {
         }
 
         public override void Process() {
-            base.Process();
 
-            if((mySuspect.IsDead) || (mySuspect.IsCuffed)) {
+            if(calloutState == ECalloutState.EnRoute && Game.LocalPlayer.Character.Position.DistanceTo2D(SpawnPoint) <= 25F) {
+                calloutState = ECalloutState.OnScene;
+                StartSuspectScenarios();
+            }
+
+            /*switch (calloutState) {
+                case ECalloutState.EnRoute:
+                    if (mySuspect.IsAlive) {
+                        if (player.DistanceTo2D(myBlip) <= 75) {
+                            Game.DisplayHelp("Investigate the area!");
+                            calloutState = ECalloutState.OnScene;
+                        }
+                    }
+                    break;
+                case ECalloutState.OnScene:
+                    if (mySuspect.IsAlive) {
+                        if (!pursuitCreated && Game.LocalPlayer.Character.DistanceTo2D(mySuspect.Position) < 35F) {
+                            pursuit = Functions.CreatePursuit();
+                            Functions.AddPedToPursuit(pursuit, mySuspect);
+                            Functions.SetPursuitIsActiveForPlayer(pursuit, true);
+                            pursuitCreated = true;
+                        } else if (pursuitCreated && !Functions.IsPursuitStillRunning(pursuit)) {
+                            End();
+                        }
+                    }
+                    break;
+            }*/
+
+            if ((mySuspect.IsDead) || (mySuspect.IsCuffed)) {
                 End();
             }
+            base.Process();
         }
 
         public override void End() {
@@ -92,6 +137,10 @@ namespace ImpCallouts.Callouts {
             if (myBlip.Exists()) myBlip.Delete();
 
             base.End();
+        }
+
+        private void StartSuspectScenarios() {
+            //TO-DO
         }
     }
 }
