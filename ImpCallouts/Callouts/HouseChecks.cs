@@ -5,17 +5,21 @@ using Rage.Native;
 using LSPD_First_Response.Mod.Callouts;
 using LSPD_First_Response.Mod.API;
 using LSPD_First_Response.Engine.Scripting.Entities;
+using ComputerPlus;
 
 namespace ImpCallouts.Callouts {
 
     [CalloutInfo("HouseCheck", CalloutProbability.High)]
     public class HouseChecks : Callout {
         public Vector3 SpawnPoint;
-        public Vector3 susWalkTo;
-        public Vector3 susFleeTo;
+        public Vector3 VehSpawnPoint;
+        public Vector3 susRunTo;
         public Blip myBlip;
         public Ped mySuspect;
+        public Vehicle myVehicle;
         public LHandle pursuit;
+        Guid callID;
+        bool computerPlusRunning;
 
         private bool pursuitCreated = false;
 
@@ -31,10 +35,9 @@ namespace ImpCallouts.Callouts {
         ECalloutState calloutState = ECalloutState.None;
 
         public override bool OnBeforeCalloutDisplayed() {
-            //SpawnPoint = World.GetNextPositionOnStreet(Game.LocalPlayer.Character.Position.Around(300f));
-            SpawnPoint = new Vector3(469, 2617, 43);
-            susWalkTo = new Vector3(474, 2590, 44);
-            susFleeTo = new Vector3(476, 2535, 48);
+            
+            VehSpawnPoint = new Vector3(466, 2592, 43);
+            SpawnPoint = new Vector3(474, 2590, 44);
 
             //If peds are valid, display the area the callout is in.
             this.ShowCalloutAreaBlipBeforeAccepting(SpawnPoint, 15f);
@@ -47,20 +50,45 @@ namespace ImpCallouts.Callouts {
             //Play the scanner audio using SpawnPoint to identify "POSITION" stated in "IN_OR_ON_POSITION". These audio files can be found in GTA V > LSPDFR > Police Scanner.
             Functions.PlayScannerAudioUsingPosition("CITIZENS_REPORT_03 A_02 POSSIBLE_BNE CRIME_BREAK_AND_ENTER IN_OR_ON_POSITION", this.SpawnPoint);
 
+            computerPlusRunning = Main.IsLSPDFRPluginRunning("ComputerPlus", new Version("1.3.0.0"));
+
+            if (computerPlusRunning) {
+                callID = ComputerPlusWrapperClass.CreateCallout("Harmony House Check", "Harmony House Check", SpawnPoint, (int)EResponseType.Code_2);
+            } else {
+                Game.DisplayHelp("Computer+ not installed.");
+            }
+
             return base.OnBeforeCalloutDisplayed();
         }
 
+        public override void OnCalloutDisplayed() {
+            if (computerPlusRunning) {
+                ComputerPlusWrapperClass.UpdateCalloutStatus(callID, (int)ECallStatus.Dispatched);
+            }
+
+            base.OnCalloutDisplayed();
+        }
+
         public override bool OnCalloutAccepted() {
+            if (computerPlusRunning) {
+                ComputerPlusWrapperClass.SetCalloutStatusToUnitResponding(callID);
+                Game.DisplayHelp("Check Computer+ for further call details");
+            }
+
             calloutState = ECalloutState.EnRoute;
+
             //Spawn mySuspect at SpawnPoint.
             mySuspect = new Ped("g_m_m_chicold_01", SpawnPoint, 0F) {
 
                 //Set mySuspect as persistent, so it doesn't randomly disappear.
                 IsPersistent = true,
 
-                //Block permanent events from mySuspect so they don't react weirdly to different things from GTA V.
+                //Block permanent events from mySuspect.
                 BlockPermanentEvents = true
             };
+
+            myVehicle = new Vehicle("YOUGA", VehSpawnPoint);
+            myVehicle.IsPersistent = true;
 
             //Stops the callout from being displayed if the suspect can't spawn for some reason
             if (!mySuspect.Exists()) End();
@@ -70,46 +98,66 @@ namespace ImpCallouts.Callouts {
             myBlip.Color = Color.Yellow;
             myBlip.Scale = 0.75F;
             myBlip.IsRouteEnabled = true;
+            
+            Functions.PlayScannerAudioUsingPosition("UNITS_RESPOND_CODE_02_02", this.SpawnPoint);
 
-            //Display a message to let the user know what to do.
-            Game.DisplaySubtitle("Check the property~w~.", 7500);
-
-            //Tells the officer which Code to run
-            Functions.PlayScannerAudio("RESPOND_CODE_1");
-
-            mySuspect.Inventory.GiveFlashlight();
-            mySuspect.Tasks.FollowNavigationMeshToPosition(susWalkTo, 8F, 1);
+            //mySuspect.Tasks.FollowNavigationMeshToPosition(susWalkTo, 8F, 1);
 
             return base.OnCalloutAccepted();
         }
 
         public override void OnCalloutNotAccepted() {
-            base.OnCalloutNotAccepted();
-            //Clean up what we spawned earlier, since the player didn't accept the callout.
-            //This states that if mySuspect exists, then we need to delete it.
-            if (mySuspect.Exists()) mySuspect.Delete();
 
-            //This states that if myBlip exists, then we need to delete it.
+            if (computerPlusRunning) {
+                ComputerPlusWrapperClass.AssignCallToAIUnit(callID);
+            }
+            if (mySuspect.Exists()) mySuspect.Delete();
             if (myBlip.Exists()) myBlip.Delete();
+
+            base.OnCalloutNotAccepted();
         }
 
         public override void Process() {
 
-            if(calloutState == ECalloutState.EnRoute && Game.LocalPlayer.Character.Position.DistanceTo2D(SpawnPoint) <= 25F) {
+            if (calloutState == ECalloutState.EnRoute && Game.LocalPlayer.Character.Position.DistanceTo2D(SpawnPoint) <= 25F) {
+                if (computerPlusRunning) {
+                    ComputerPlusWrapperClass.SetCalloutStatusToAtScene(callID);
+                    ComputerPlusWrapperClass.AddUpdateToCallout(callID, "Officer arrived at scene.");
+                    ComputerPlusWrapperClass.AddPedToCallout(callID, mySuspect);
+                    myBlip.IsRouteEnabled = false;
+                }
+                myBlip.IsRouteEnabled = false;
                 calloutState = ECalloutState.OnScene;
                 StartSuspectScenarios();
             }
 
-            /*switch (calloutState) {
-                case ECalloutState.EnRoute:
-                    if (mySuspect.IsAlive) {
-                        if (player.DistanceTo2D(myBlip) <= 75) {
-                            Game.DisplayHelp("Investigate the area!");
-                            calloutState = ECalloutState.OnScene;
-                        }
-                    }
-                    break;
-                case ECalloutState.OnScene:
+            if ((mySuspect.IsDead) || (mySuspect.IsCuffed)) {
+                End();
+            }
+            base.Process();
+        }
+
+        public override void End() {
+
+            if (computerPlusRunning) {
+                ComputerPlusWrapperClass.ConcludeCallout(callID);
+            }
+
+            if (mySuspect.Exists()) mySuspect.Dismiss();
+            if (myBlip.Exists()) myBlip.Delete();
+            if (myVehicle.Exists()) myVehicle.Dismiss();
+
+            base.End();
+        }
+
+        private void StartSuspectScenarios() {
+            GameFiber.StartNew(delegate {
+                int r = new Random().Next(1, 7);
+                calloutState = ECalloutState.DecisionMade;
+                Game.HideHelp();
+
+                //Suspect flees on foot
+                if (r == 1) {
                     if (mySuspect.IsAlive) {
                         if (!pursuitCreated && Game.LocalPlayer.Character.DistanceTo2D(mySuspect.Position) < 35F) {
                             pursuit = Functions.CreatePursuit();
@@ -119,28 +167,41 @@ namespace ImpCallouts.Callouts {
                         } else if (pursuitCreated && !Functions.IsPursuitStillRunning(pursuit)) {
                             End();
                         }
+                    } else {
+                        End();
                     }
-                    break;
-            }*/
+                }
 
-            if ((mySuspect.IsDead) || (mySuspect.IsCuffed)) {
-                End();
-            }
-            base.Process();
-        }
+                //Suspect flees in YOUGA
+                if (r == 2) {
+                    if (mySuspect.IsAlive) {
+                        susRunTo = new Vector3(462, 2593, 43);
+                        mySuspect.Tasks.FollowNavigationMeshToPosition(susRunTo, 243, 2).WaitForCompletion(10000);
+                        mySuspect.Tasks.EnterVehicle(myVehicle, 15000, -1).WaitForCompletion(5000);
+                        if (!pursuitCreated && Game.LocalPlayer.Character.DistanceTo2D(mySuspect.Position) < 35F) {
+                            pursuit = Functions.CreatePursuit();
+                            Functions.AddPedToPursuit(pursuit, mySuspect);
+                            Functions.SetPursuitIsActiveForPlayer(pursuit, true);
+                            pursuitCreated = true;
+                        } else if (pursuitCreated && !Functions.IsPursuitStillRunning(pursuit)) {
+                            End();
+                        }
+                    } else {
+                        End();
+                    }
+                }
 
-        public override void End() {
-            //This states that if mySuspect exists, then we need to dismiss it.
-            if (mySuspect.Exists()) mySuspect.Dismiss();
-
-            //Delete the blip attached to mySuspect.
-            if (myBlip.Exists()) myBlip.Delete();
-
-            base.End();
-        }
-
-        private void StartSuspectScenarios() {
-            //TO-DO
+                //Suspect runs at officer with knife
+                if (r == 3) {
+                    Game.DisplayHelp("yes");
+                    mySuspect.Inventory.GiveNewWeapon("WEAPON_KNIFE", -1, true);
+                    if (mySuspect.IsAlive) {
+                        mySuspect.Tasks.FightAgainst(player);
+                    } else {
+                        End();
+                    }
+                }
+            });
         }
     }
 }

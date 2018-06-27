@@ -48,6 +48,9 @@
     <CodeAnalysisRuleSet>MinimumRecommendedRules.ruleset</CodeAnalysisRuleSet>
   </PropertyGroup>
   <ItemGroup>
+    <Reference Include="ComputerPlus">
+      <HintPath>..\..\..\References\ComputerPlus.dll</HintPath>
+    </Reference>
     <Reference Include="LSPD First Response">
       <HintPath>..\..\..\References\LSPD First Response.dll</HintPath>
     </Reference>
@@ -67,11 +70,14 @@
   <ItemGroup>
     <Compile Include="Callouts\HouseChecks.cs" />
     <Compile Include="Callouts\PursuitInProgress.cs" />
+    <Compile Include="ComputerPlusWrapperClass.cs" />
+    <Compile Include="Extensions\Vector3Extension.cs" />
     <Compile Include="Main.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>
     <WCFMetadata Include="Connected Services\" />
   </ItemGroup>
+  <ItemGroup />
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>
