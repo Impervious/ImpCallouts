@@ -63,6 +63,7 @@ namespace ImpCallouts {
 
         private static void RegisterCallouts() {
             Functions.RegisterCallout(typeof(HouseChecks));
+            Functions.RegisterCallout(typeof(Disturbance));
         }
     }
 }
